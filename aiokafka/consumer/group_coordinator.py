@@ -1,7 +1,7 @@
 import asyncio
 import collections
-import logging
 import copy
+import logging
 import time
 
 import aiokafka.errors as Errors
@@ -17,7 +17,6 @@ from aiokafka.protocol.group import (
     SyncGroupRequest, JoinGroupResponse, JoinGroupResponse_v5)
 from aiokafka.structs import OffsetAndMetadata, TopicPartition
 from aiokafka.util import create_future, create_task
-
 
 log = logging.getLogger(__name__)
 
@@ -131,7 +130,6 @@ class NoGroupCoordinator(BaseCoordinator):
 
                 assignment = self._subscription.subscription.assignment
                 if assignment is None:
-
                     await self._subscription.wait_for_assignment()
                     continue
 
@@ -449,8 +447,8 @@ class GroupCoordinator(BaseCoordinator):
         return group_assignment
 
     async def _on_join_complete(
-        self, generation, member_id, protocol,
-        member_assignment_bytes
+            self, generation, member_id, protocol,
+            member_assignment_bytes
     ):
         assignor = self._lookup_assignor(protocol)
         assert assignor, 'invalid assignment protocol: %s' % protocol
@@ -521,7 +519,7 @@ class GroupCoordinator(BaseCoordinator):
             bool: True if consumer should rejoin group, False otherwise
         """
         return (
-            subscription.assignment is None or self._rejoin_needed_fut.done()
+                subscription.assignment is None or self._rejoin_needed_fut.done()
         )
 
     async def ensure_coordinator_known(self):
@@ -695,6 +693,8 @@ class GroupCoordinator(BaseCoordinator):
         # We will not attempt rejoin if there is no activity on consumer
         idle_time = self._subscription.fetcher_idle_time
         if prev_assignment is not None and idle_time >= self._max_poll_interval:
+            log.error("Idle time: idle_time = %s >= max_poll_interval = %s",
+                      idle_time, self._max_poll_interval)
             await asyncio.sleep(self._retry_backoff_ms / 1000)
             return None
 
@@ -705,8 +705,10 @@ class GroupCoordinator(BaseCoordinator):
         # subscription change and coordinator failure by itself and
         # this way we don't need to worry about racing or cancellation
         # issues that could occur if re-join were to be a task.
+        log.info("Performing rejoin for group %s", self.group_id)
         success = await self._do_rejoin_group(subscription)
         if success:
+            log.info("Rejoin completed successfully for group %s", self.group_id)
             self._performed_join_prepare = False
             self._start_heartbeat_task()
             return subscription.assignment
@@ -730,6 +732,9 @@ class GroupCoordinator(BaseCoordinator):
         retry_backoff = self._retry_backoff_ms / 1000
         sleep_time = hb_interval
 
+        log.info(
+            f"Starting heartbeat routine with last_ok_heartbeat = {last_ok_heartbeat}, hb_interval = {hb_interval}, session_timeout = {session_timeout}, retry_backoff = {retry_backoff}, sleep_time = {sleep_time}")
+
         # There is no point to heartbeat after Broker stopped recognizing
         # this consumer, so we stop after resetting generation.
         while self.member_id != JoinGroupRequest[0].UNKNOWN_MEMBER_ID:
@@ -746,6 +751,7 @@ class GroupCoordinator(BaseCoordinator):
             # routine
 
             if success:
+                log.info(f"Successful heartbeat, resetting last_ok_heartbeat = {last_ok_heartbeat} to {t0}")
                 last_ok_heartbeat = time.monotonic()
                 sleep_time = max((0, hb_interval - last_ok_heartbeat + t0))
             else:
@@ -764,10 +770,15 @@ class GroupCoordinator(BaseCoordinator):
             # to leave the group
             idle_time = self._subscription.fetcher_idle_time  # OCaptainMyCaptain!
             if idle_time < self._max_poll_interval:
+
                 sleep_time = min(
                     sleep_time,
                     self._max_poll_interval - idle_time)
+                log.info(
+                    f"Idle time: {idle_time} < {self._max_poll_interval}, won't leave group, sleeping for {sleep_time}")
             else:
+                log.error(
+                    f"Idle time: idle_time = {idle_time} >= max_poll_interval = {self._max_poll_interval}, leaving group triggered")
                 await self._maybe_leave_group()  # OCaptainMyCaptain! Leave group is triggered from here
 
         log.debug("Stopping heartbeat task")
@@ -776,8 +787,8 @@ class GroupCoordinator(BaseCoordinator):
         version = 0 if self._client.api_version < (0, 11, 0) else 1
         request = HeartbeatRequest[version](
             self.group_id, self.generation, self.member_id)
-        log.debug("Heartbeat: %s[%s] %s",
-                  self.group_id, self.generation, self.member_id)
+        log.info("Heartbeat: %s[%s] %s",
+                 self.group_id, self.generation, self.member_id)
 
         # _send_req may fail with error like `RequestTimedOutError`
         # we need to catch it so coordinator_routine won't fail
@@ -788,7 +799,7 @@ class GroupCoordinator(BaseCoordinator):
             return False
         error_type = Errors.for_code(resp.error_code)
         if error_type is Errors.NoError:
-            log.debug(
+            log.info(
                 "Received successful heartbeat response for group %s",
                 self.group_id)
             return True
@@ -810,7 +821,7 @@ class GroupCoordinator(BaseCoordinator):
             # rebalance timeout. If we stop sending heartbeats,
             # however, then the session timeout may expire before we
             # can rejoin.
-            return True   # OCaptainMyCaptain! Returns True none the less
+            return True  # OCaptainMyCaptain! Returns True none the less
         elif error_type is Errors.IllegalGenerationError:
             log.warning(
                 "Heartbeat failed for group %s: generation id is not "
