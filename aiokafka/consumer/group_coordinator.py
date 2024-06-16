@@ -752,7 +752,7 @@ class GroupCoordinator(BaseCoordinator):
                 sleep_time = retry_backoff
 
             session_time = time.monotonic() - last_ok_heartbeat
-            if session_time > session_timeout:
+            if session_time > session_timeout:  # OCaptainMyCaptain! Doesnt go here as heartbeat fail due to rebalance is marked ok
                 # the session timeout has expired without seeing a successful
                 # heartbeat, so we should probably make sure the coordinator
                 # is still healthy.
@@ -762,13 +762,13 @@ class GroupCoordinator(BaseCoordinator):
 
             # If consumer is idle (no records consumed) for too long we need
             # to leave the group
-            idle_time = self._subscription.fetcher_idle_time
+            idle_time = self._subscription.fetcher_idle_time  # OCaptainMyCaptain!
             if idle_time < self._max_poll_interval:
                 sleep_time = min(
                     sleep_time,
                     self._max_poll_interval - idle_time)
             else:
-                await self._maybe_leave_group()
+                await self._maybe_leave_group()  # OCaptainMyCaptain! Leave group is triggered from here
 
         log.debug("Stopping heartbeat task")
 
@@ -799,7 +799,7 @@ class GroupCoordinator(BaseCoordinator):
                 " is either not started or not valid",
                 self.group_id, self.coordinator_id)
             self.coordinator_dead()
-        elif error_type is Errors.RebalanceInProgressError:
+        elif error_type is Errors.RebalanceInProgressError:  # OCaptainMyCaptain!
             log.warning(
                 "Heartbeat failed for group %s because it is rebalancing",
                 self.group_id)
@@ -810,7 +810,7 @@ class GroupCoordinator(BaseCoordinator):
             # rebalance timeout. If we stop sending heartbeats,
             # however, then the session timeout may expire before we
             # can rejoin.
-            return True
+            return True   # OCaptainMyCaptain! Returns True none the less
         elif error_type is Errors.IllegalGenerationError:
             log.warning(
                 "Heartbeat failed for group %s: generation id is not "
